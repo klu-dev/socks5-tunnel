@@ -62,6 +62,12 @@ For example in Windows, run command:
 
 Another way is duplicating chrome shortcut. Add ` --proxy-server="SOCKS5://127.0.0.1:1080"` in `Target` item of `Shortcut` tab properties.
 
+7. Help
+
+```
+D:\code\socks5-tunnel\target\debug>.\socks5-tunnel.exe --help
+```
+
 6. Show log.
 
 Add environment RUST_LOG=info/debug/trace *before* start the program.
@@ -69,7 +75,7 @@ Add environment RUST_LOG=info/debug/trace *before* start the program.
 Windows cmd:
 
 ```
-set RUST_LOG=info
+D:\code\socks5-tunnel\target\debug> set RUST_LOG=info
 ```
 
 Linux bash:
@@ -105,17 +111,17 @@ Compared with https proxy, the noise protocol is more simple without CA and has 
 
 ## How is this module organized?
 
-    crypto                                    # porting from [libra](https://github.com/libra/libra) to provide API for secret key   operations
-    crypto-derive                             # porting from [libra](https://github.com/libra/libra) to provide macros used by crypto library
-    memsocket                                 # porting from [libra](https://github.com/libra/libra) to simulate transport  in memory used for tests
-    src
-    ├── noise                                 # porting from [libra](https://github.com/libra/libra) to implement noise futures and transport
-    ├── transport                             # porting from [libra](https://github.com/libra/libra) to abstract general protocol concept
-    ├── build_transport                       # Upgrade tcp transport to noise transport
-    ├── command                               # Parse command arguments
-    ├── end_node                              # server mode proxy
-    ├── Server                                # sransport listening stream accept
-    ├── start_node                            # client mode proxy
+crypto&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; # porting from [libra](https://github.com/libra/libra) to provide API for secret key   operations  
+crypto-derive &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;&nbsp; # porting from [libra](https://github.com/libra/libra) to provide macros used by crypto library  
+memsocket&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;&nbsp; # porting from [libra](https://github.com/libra/libra) to simulate transport  in memory used for tests  
+src  
+|---- noise&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp; # porting from [libra](https://github.com/libra/libra) to implement noise futures and transport  
+|---- transport&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;&nbsp; # porting from [libra](https://github.com/libra/libra) to abstract general protocol concept  
+|---- build_transport&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;# upgrade tcp transport to noise transport  
+|---- command&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;&nbsp;# parse command arguments  
+|---- end_node&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;&nbsp;# server mode proxy  
+|---- server&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;# transport listening stream accept  
+|---- start_node&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; # client mode proxy
 
 # License
 
