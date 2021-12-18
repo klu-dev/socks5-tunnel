@@ -2,7 +2,7 @@
 name = "crypto"
 version = "0.1.0"
 authors = ["kail"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -10,10 +10,12 @@ edition = "2018"
 crypto-derive = { path = "../crypto-derive", version = "0.1" }
 anyhow = "1.0"
 hex = "0.4.2"
-rand = "0.7"
+rand_core = { version = "0.6", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
-x25519-dalek = { version = "0.6", default-features = false }
+x25519-dalek = { version = "0.1", package = "x25519-dalek-fiat", default-features = false, features = [
+    "std",
+] }
 
 [features]
 default = ["std", "u64_backend"]

@@ -14,7 +14,7 @@ use std::str;
 use std::sync::Arc;
 use tokio::io;
 use tokio::net::lookup_host;
-use tokio::time::{delay_for, Duration};
+use tokio::time::{sleep, Sleep};
 
 #[allow(dead_code)]
 mod v5 {
@@ -364,8 +364,8 @@ impl EndNode {
         // which will create a future that will resolve to `()` in 20 seconds.
         // We then apply this timeout to the entire handshake all at once by
         // performing a `select` between the timeout and the handshake itself.
-        let delay = delay_for(Duration::new(20, 0));
-        let pair = future::select(handshake_finish, delay)
+        let delay = sleep(std::time::Duration::new(20, 0));
+        let pair = future::select(handshake_finish, delay.boxed())
             .then(|either| async move {
                 match either {
                     future::Either::Left((Ok(pair), _)) => Ok(pair),

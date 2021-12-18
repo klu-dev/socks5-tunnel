@@ -20,7 +20,7 @@ use std::{
     time::Duration,
 };
 use tokio::net::{TcpListener, TcpStream};
-use tokio_util::compat::{Compat, Tokio02AsyncReadCompatExt};
+use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
 /// Transport to build TCP connections
 #[derive(Debug, Clone, Default)]
@@ -40,20 +40,8 @@ pub struct TcpTransport {
 
 impl TcpTransport {
     fn apply_config(&self, stream: &TcpStream) -> ::std::io::Result<()> {
-        if let Some(size) = self.recv_buffer_size {
-            stream.set_recv_buffer_size(size)?;
-        }
-
-        if let Some(size) = self.send_buffer_size {
-            stream.set_send_buffer_size(size)?;
-        }
-
         if let Some(ttl) = self.ttl {
             stream.set_ttl(ttl)?;
-        }
-
-        if let Some(keepalive) = self.keepalive {
-            stream.set_keepalive(keepalive)?;
         }
 
         if let Some(nodelay) = self.nodelay {
@@ -106,8 +94,8 @@ impl Stream for TcpListenerStream {
     type Item = io::Result<(future::Ready<io::Result<TcpSocket>>, Multiaddr)>;
 
     fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match Pin::new(&mut self.inner.incoming()).poll_next(context) {
-            Poll::Ready(Some(Ok(socket))) => {
+        match self.inner.poll_accept(context) {
+            Poll::Ready(Ok((socket, addr))) => {
                 if let Err(e) = self.config.apply_config(&socket) {
                     return Poll::Ready(Some(Err(e)));
                 }
@@ -120,8 +108,7 @@ impl Stream for TcpListenerStream {
                     dialer_addr,
                 ))))
             }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
-            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e))),
             Poll::Pending => Poll::Pending,
         }
     }

@@ -1,7 +1,7 @@
 // Copyright (c) The Libra Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use bytes::{buf::BufExt, Buf, Bytes};
+use bytes::{Buf, Bytes};
 use futures::{
     channel::mpsc::{self, UnboundedReceiver, UnboundedSender},
     io::{AsyncRead, AsyncWrite, Error, ErrorKind, Result},

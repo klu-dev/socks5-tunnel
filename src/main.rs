@@ -28,13 +28,9 @@
 
 #![warn(rust_2018_idioms)]
 
-use ::log::{error, log};
+use ::log::error;
 use crypto::{traits::ValidKey, x25519};
-use env_logger;
-use hex;
-use rand::{rngs::StdRng, SeedableRng};
-
-use tokio;
+use rand::{rngs::StdRng, RngCore, SeedableRng};
 use tokio::io;
 
 use crate::command::{parse_command_line, Command};
@@ -90,7 +86,7 @@ async fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn generate_keypair() -> () {
+fn generate_keypair() {
     let mut rng = StdRng::from_entropy();
     let private_key = x25519::PrivateKey::for_test(&mut rng);
     println!(
@@ -101,7 +97,6 @@ fn generate_keypair() -> () {
         "Public key:\n{}",
         hex::encode(private_key.public_key().to_bytes().as_slice())
     );
-    ()
 }
 
 fn other(desc: &str) -> io::Error {

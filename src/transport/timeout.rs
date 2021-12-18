@@ -12,7 +12,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use tokio::time::{delay_for, Delay};
+use tokio::time::{sleep, Sleep};
 
 /// A [`TimeoutTransport`] is a transport which wraps another transport with a timeout on all
 /// inbound and outbound connection setup.
@@ -109,7 +109,8 @@ where
 pub struct TimeoutFuture<F> {
     #[pin]
     future: F,
-    timeout: Delay,
+    #[pin]
+    timeout: Sleep,
 }
 
 impl<F> TimeoutFuture<F>
@@ -119,7 +120,7 @@ where
     fn new(future: F, timeout: Duration) -> Self {
         Self {
             future,
-            timeout: delay_for(timeout),
+            timeout: sleep(timeout),
         }
     }
 }
@@ -142,7 +143,7 @@ where
         }
 
         // Now check to see if we've overshot the timeout
-        match Pin::new(self.as_mut().project().timeout).poll(&mut context) {
+        match self.as_mut().project().timeout.poll(&mut context) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(()) => Poll::Ready(Err(TimeoutTransportError::Timeout)),
         }
@@ -153,7 +154,7 @@ where
 pub enum TimeoutTransportError<E> {
     Timeout,
     #[allow(dead_code)]
-    TimerError(::tokio::time::Error),
+    TimerError(::tokio::time::error::Error),
     TransportError(E),
 }
 
