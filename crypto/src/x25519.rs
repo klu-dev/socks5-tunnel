@@ -81,9 +81,8 @@ impl PrivateKey {
     }
 
     /// Generate a private key for testing
-    pub fn for_test<T: rand_core::RngCore + rand_core::CryptoRng>(rng: &mut T) -> Self {
-        let s = x25519_dalek::StaticSecret::new(rng);
-        Self(s.to_bytes())
+    pub fn for_test(rng: &mut (impl rand_core::RngCore + rand_core::CryptoRng)) -> Self {
+        Self(x25519_dalek::StaticSecret::new(rng).to_bytes())
     }
 }
 

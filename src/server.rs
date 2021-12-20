@@ -1,12 +1,14 @@
 use crate::build_transport::Connection;
+use crate::command::NetAddrIpv4List;
 use crate::transport::{tcp::multiaddr_to_socketaddr, BoundInfo};
-use ::log::{debug, log, warn};
+use ::log::{debug, warn};
 use futures::{
     future::Future,
     io::{ReadHalf, WriteHalf},
     stream::{Stream, StreamExt},
     AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt,
 };
+use log::trace;
 use parity_multiaddr::Multiaddr;
 use std::io;
 
@@ -52,8 +54,9 @@ pub async fn transfer(
     writer_addr: (Multiaddr, Multiaddr),
 ) -> io::Result<u64> {
     let mut buf = vec![0u8; 64 * 1024];
-    let mut amt = 0 as u64;
+    let mut amt = 0u64;
     loop {
+        trace!("transfer: looping");
         let read_size = match reader.read(&mut buf).await {
             Ok(n) => {
                 if n == 0 {
@@ -66,6 +69,7 @@ pub async fn transfer(
                     }
                     return Ok(amt);
                 } else {
+                    trace!("transfer: read {} bytes", n);
                     n
                 }
             }

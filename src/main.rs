@@ -30,7 +30,7 @@
 
 use ::log::error;
 use crypto::{traits::ValidKey, x25519};
-use rand::{rngs::StdRng, RngCore, SeedableRng};
+use rand::{rngs::StdRng, SeedableRng};
 use tokio::io;
 
 use crate::command::{parse_command_line, Command};
@@ -42,12 +42,13 @@ mod command;
 mod end_node;
 mod noise;
 mod server;
+mod socks;
 mod start_node;
 mod transport;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    drop(env_logger::init());
+    env_logger::init();
 
     let cmd = parse_command_line();
 
@@ -68,7 +69,13 @@ async fn main() -> io::Result<()> {
                 error!("Start server error for {}: {}", listen_addr, e);
             }
         }
-        Command::ClientMode(listen_addr, peer_addr, local_priavte_key, peer_public_key) => {
+        Command::ClientMode(
+            listen_addr,
+            peer_addr,
+            local_priavte_key,
+            peer_public_key,
+            bypass_list,
+        ) => {
             println!("Work in client mode...");
             println!("Listening on: {}", listen_addr);
             if let Err(e) = start_client_mode(
@@ -76,6 +83,7 @@ async fn main() -> io::Result<()> {
                 peer_addr,
                 local_priavte_key,
                 peer_public_key,
+                bypass_list,
             )
             .await
             {

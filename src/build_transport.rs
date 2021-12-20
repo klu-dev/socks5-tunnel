@@ -28,6 +28,7 @@ pub struct ConnectionMetadata {
     origin: ConnectionOrigin,
 }
 
+unsafe impl Send for ConnectionMetadata {}
 impl ConnectionMetadata {
     pub fn new(
         c_addr: Multiaddr,
@@ -64,6 +65,7 @@ pub struct Connection<TSocket> {
     pub metadata: ConnectionMetadata,
 }
 
+unsafe impl<T: TSocket> Send for Connection<T> {}
 /// A timeout for the connection to open and complete all of the upgrade steps.
 const TRANSPORT_TIMEOUT: Duration = Duration::from_secs(30);
 

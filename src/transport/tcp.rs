@@ -93,9 +93,9 @@ pub struct TcpListenerStream {
 impl Stream for TcpListenerStream {
     type Item = io::Result<(future::Ready<io::Result<TcpSocket>>, Multiaddr)>;
 
-    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.inner.poll_accept(context) {
-            Poll::Ready(Ok((socket, addr))) => {
+            Poll::Ready(Ok((socket, _addr))) => {
                 if let Err(e) = self.config.apply_config(&socket) {
                     return Poll::Ready(Some(Err(e)));
                 }
