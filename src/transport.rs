@@ -17,6 +17,7 @@ use std::time::Duration;
 
 pub mod and_then;
 pub mod boxed;
+#[cfg(test)]
 pub mod memory;
 pub mod tcp;
 pub mod timeout;

@@ -1,6 +1,5 @@
 use crate::transport::tcp::socketaddr_to_multiaddr;
 use crypto::x25519::{PrivateKey, PublicKey};
-use log::trace;
 use parity_multiaddr::Multiaddr;
 use std::collections::HashMap;
 use std::fs::File;
@@ -160,7 +159,7 @@ fn load_bypass_address_list(file_name: impl AsRef<Path> + Clone) -> Option<NetAd
     if bypass.is_empty() {
         None
     } else {
-        trace!("Parse bypass list {:?}", bypass);
+        println!("Parse bypass records size: {}", bypass.len());
         Some(bypass)
     }
 }

@@ -6,9 +6,8 @@ use crate::other;
 use crate::server::{server_stream_handler, transfer};
 use crate::socks::{name_port, v4, v5};
 use crate::transport::tcp::socketaddr_to_multiaddr;
-use crate::transport::BoundInfo;
 use crate::transport::{tcp::multiaddr_to_socketaddr, Transport};
-use ::log::{info, log, warn};
+use ::log::{info, warn};
 use crypto::x25519::{PrivateKey, PublicKey};
 use futures::{future, AsyncReadExt, AsyncWriteExt, FutureExt, TryFutureExt};
 use log::{debug, trace};
@@ -235,15 +234,16 @@ impl StartNode {
                         v5::ATYP_IPV6 => {
                             let mut buf = [0u8; 18];
                             conn.read_exact(&mut buf).await?;
-                            let a = ((buf[0] as u16) << 8) | (buf[1] as u16);
-                            let b = ((buf[2] as u16) << 8) | (buf[3] as u16);
-                            let c = ((buf[4] as u16) << 8) | (buf[5] as u16);
-                            let d = ((buf[6] as u16) << 8) | (buf[7] as u16);
-                            let e = ((buf[8] as u16) << 8) | (buf[9] as u16);
-                            let f = ((buf[10] as u16) << 8) | (buf[11] as u16);
-                            let g = ((buf[12] as u16) << 8) | (buf[13] as u16);
-                            let h = ((buf[14] as u16) << 8) | (buf[15] as u16);
-                            let addr = Ipv6Addr::new(a, b, c, d, e, f, g, h);
+                            let v6_a = ((buf[0] as u16) << 8) | (buf[1] as u16);
+                            let v6_b = ((buf[2] as u16) << 8) | (buf[3] as u16);
+                            let v6_c = ((buf[4] as u16) << 8) | (buf[5] as u16);
+                            let v6_d = ((buf[6] as u16) << 8) | (buf[7] as u16);
+                            let v6_e = ((buf[8] as u16) << 8) | (buf[9] as u16);
+                            let v6_f = ((buf[10] as u16) << 8) | (buf[11] as u16);
+                            let v6_g = ((buf[12] as u16) << 8) | (buf[13] as u16);
+                            let v6_h = ((buf[14] as u16) << 8) | (buf[15] as u16);
+                            let addr =
+                                Ipv6Addr::new(v6_a, v6_b, v6_c, v6_d, v6_e, v6_f, v6_g, v6_h);
                             let port = ((buf[16] as u16) << 8) | (buf[17] as u16);
                             let addr = SocketAddrV6::new(addr, port, 0, 0);
                             Ok((
@@ -315,7 +315,7 @@ impl StartNode {
                 if atyp != v5::ATYP_IPV6 {
                     if let SocketAddr::V4(addr_v4) = socket_addr {
                         pass = self.is_bypass_addr(addr_v4.ip());
-                        trace!("ip: {} pass: {}", addr_v4, pass)
+                        trace!("address: {} bypass: {}", addr_v4, pass)
                     }
                 }
                 if !pass {
@@ -340,7 +340,7 @@ impl StartNode {
             })
             .boxed();
 
-        let (mut conn, bypass_c2, tun_c2, dest_addr) = connected.await?;
+        let (conn, bypass_c2, tun_c2, dest_addr) = connected.await?;
         if bypass_c2.is_some() {
             self.run_bypass_proc(conn, bypass_c2.unwrap(), dest_addr)
                 .await
@@ -484,8 +484,7 @@ impl StartNode {
                 if buf[1] != 0 {
                     return io::Result::Err(other(&format!("connect command reply {}", buf[1])));
                 }
-                let mut remote_c2_local_addr = None;
-                match buf[3] {
+                let remote_c2_local_addr = match buf[3] {
                     v5::ATYP_IPV4 => {
                         let mut buf = [0u8; 4 + 2];
                         c2.socket.as_mut().unwrap().read_exact(&mut buf).await?;
@@ -493,7 +492,7 @@ impl StartNode {
                         let ip: [u8; 4] = buf[..4].try_into().unwrap();
                         let sock_addr =
                             SocketAddrV4::new(ip.into(), ((buf[4] as u16) << 8) + (buf[5] as u16));
-                        remote_c2_local_addr = Some(SocketAddr::V4(sock_addr));
+                        Some(SocketAddr::V4(sock_addr))
                     }
                     v5::ATYP_IPV6 => {
                         let mut buf = [0u8; 16 + 2];
@@ -506,7 +505,7 @@ impl StartNode {
                             0,
                             0,
                         );
-                        remote_c2_local_addr = Some(SocketAddr::V6(sock_addr));
+                        Some(SocketAddr::V6(sock_addr))
                     }
                     // v5::ATYP_DOMAIN => {
                     //     let mut buf = [0u8; 1];
@@ -519,7 +518,7 @@ impl StartNode {
                         let msg = format!("connect_response: unknown ATYP received: {}", n);
                         return io::Result::Err(other(&msg));
                     }
-                }
+                };
 
                 Ok((c2, remote_c2_local_addr.unwrap()))
             })
@@ -560,6 +559,15 @@ impl StartNode {
             // RSV - reserved
             resp[2] = 0;
 
+            if resp[1] != 0 {
+                resp[3] = 1;
+                resp[4..10].copy_from_slice(&[0, 0, 0, 0, 0, 0]);
+                conn.write_all(&resp[..10]).await?;
+                conn.flush().await?;
+                return Err(other("c2 connect fail"));
+            }
+
+            let c2 = c2.unwrap();
             // ATYP, BND.ADDR, and BND.PORT
             //
             // These three fields, when used with a "connect" command
@@ -568,14 +576,7 @@ impl StartNode {
             // encoding of what's actually written depending on whether we're
             // using an IPv4 or IPv6 address, but otherwise it's pretty
             // standard.
-            let addr = match c2
-                .as_ref()
-                .map(|r| multiaddr_to_socketaddr(&r.local_addr()))
-            {
-                Ok(Ok(addr)) => Ok(addr),
-                Ok(Err(e)) => io::Result::Err(e),
-                Err(e) => io::Result::Err(io::Error::new(e.kind(), e.to_string().as_str())),
-            }?;
+            let addr = multiaddr_to_socketaddr(&c2.local_addr())?;
 
             let pos = match addr {
                 SocketAddr::V4(ref a) => {
@@ -607,7 +608,7 @@ impl StartNode {
             // the connection.
             conn.write_all(&resp[..(pos + 2)]).await?;
             conn.flush().await?;
-            io::Result::Ok((conn, c2?, dest_addr))
+            io::Result::Ok((conn, c2, dest_addr))
         }
         .boxed();
 
@@ -622,7 +623,7 @@ impl StartNode {
         // which will create a future that will resolve to `()` in 20 seconds.
         // We then apply this timeout to the entire handshake all at once by
         // performing a `select` between the timeout and the handshake itself.
-        let delay = sleep(std::time::Duration::new(20, 0));
+        let delay = sleep(std::time::Duration::from_secs(20_u64));
         let pair = future::select(handshake_finish, delay.boxed())
             .then(|either| async move {
                 match either {
@@ -655,7 +656,6 @@ impl StartNode {
             let c2_addr = (c2.local_addr(), c2.peer_addr());
             let (c1_read, c1_write) = c1.split();
             let (c2_read, c2_write) = c2.split();
-
             let half1 = transfer(c1_read, c1_addr.clone(), c2_write, c2_addr.clone());
             let half2 = transfer(c2_read, c2_addr, c1_write, c1_addr);
             let (res1, res2) = future::try_join(half1, half2).await?;
@@ -701,7 +701,7 @@ impl StartNode {
                 resp[4..10].copy_from_slice(&[0, 0, 0, 0, 0, 0]);
                 conn.write_all(&resp[..10]).await?;
                 conn.flush().await?;
-                return Err(other("c2 connectin fail"));
+                return Err(other("c2 connect fail"));
             }
 
             let (c2, remote_c2_local_addr) = c2.unwrap();
@@ -757,16 +757,15 @@ impl StartNode {
         let half1 = transfer(c1_read, c1_addr.clone(), c2_write, c2_addr.clone());
         let half2 = transfer(c2_read, c2_addr, c1_write, c1_addr);
         let (res1, res2) = future::try_join(half1, half2).await?;
-        Ok((res1, res2, dest_addr))
+        io::Result::Ok((res1, res2, dest_addr))
     }
 
     async fn update_peer_conn_state(&self) -> bool {
-        let mut peer_ready = false;
         let delay = sleep(std::time::Duration::from_secs(5));
         let conn = TCP_TRANSPORT
             .dial(self.peer_addr.clone())
             .unwrap_or_else(|_| panic!("Transport dail {} fail", self.peer_addr));
-        if future::select(conn, delay.boxed())
+        let peer_ready = future::select(conn, delay.boxed())
             .then(|either| async move {
                 match either {
                     future::Either::Left((Ok(pair), _)) => Ok(pair),
@@ -777,12 +776,7 @@ impl StartNode {
                 }
             })
             .await
-            .is_ok()
-        {
-            peer_ready = true;
-        } else {
-            peer_ready = false;
-        }
+            .is_ok();
 
         self.peer_ready.store(peer_ready, Ordering::Relaxed);
         peer_ready

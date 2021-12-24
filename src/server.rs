@@ -1,5 +1,4 @@
 use crate::build_transport::Connection;
-use crate::command::NetAddrIpv4List;
 use crate::transport::{tcp::multiaddr_to_socketaddr, BoundInfo};
 use ::log::{debug, warn};
 use futures::{
@@ -8,9 +7,7 @@ use futures::{
     stream::{Stream, StreamExt},
     AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt,
 };
-use log::trace;
 use parity_multiaddr::Multiaddr;
-use std::io;
 
 /// Server side handler for send throughput benchmark when the messages are sent
 /// over a simple stream (tcp or in-memory).
@@ -52,11 +49,10 @@ pub async fn transfer(
     reader_addr: (Multiaddr, Multiaddr),
     mut writer: WriteHalf<impl AsyncWrite>,
     writer_addr: (Multiaddr, Multiaddr),
-) -> io::Result<u64> {
-    let mut buf = vec![0u8; 64 * 1024];
-    let mut amt = 0u64;
+) -> std::io::Result<u64> {
+    let mut buf = vec![0u8; 8 * 1024];
+    let mut amt = 0_u64;
     loop {
-        trace!("transfer: looping");
         let read_size = match reader.read(&mut buf).await {
             Ok(n) => {
                 if n == 0 {
@@ -69,7 +65,6 @@ pub async fn transfer(
                     }
                     return Ok(amt);
                 } else {
-                    trace!("transfer: read {} bytes", n);
                     n
                 }
             }

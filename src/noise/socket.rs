@@ -3,7 +3,7 @@
 
 //! Noise Socket
 
-use ::log::{error, log, trace};
+use ::log::{error, trace};
 use futures::{
     future::poll_fn,
     io::{AsyncRead, AsyncWrite},
@@ -287,7 +287,8 @@ where
                         Ok(Some(frame_len)) => {
                             // Empty Frame
                             if frame_len == 0 {
-                                self.read_state = ReadState::Init;
+                                // 0-length messages are not expected
+                                self.read_state = ReadState::Eof(Err(()));
                             } else {
                                 self.read_state = ReadState::ReadFrame {
                                     frame_len,
@@ -656,13 +657,9 @@ mod test {
     use snow::{params::NoiseParams, Builder, Keypair};
     use std::io;
 
-    fn build_test_connection() -> Result<
-        (
-            (Keypair, Handshake<MemorySocket>),
-            (Keypair, Handshake<MemorySocket>),
-        ),
-        snow::error::Error,
-    > {
+    struct KeySessionPair(Keypair, Handshake<MemorySocket>);
+
+    fn build_test_connection() -> Result<(KeySessionPair, KeySessionPair), snow::error::Error> {
         let parameters: NoiseParams = NOISE_PARAMETER.parse().expect("Invalid protocol name");
 
         let dialer_keypair = Builder::new(parameters.clone()).generate_keypair()?;
@@ -682,8 +679,8 @@ mod test {
         );
 
         Ok((
-            (dialer_keypair, Handshake(dialer)),
-            (listener_keypair, Handshake(listener)),
+            KeySessionPair(dialer_keypair, Handshake(dialer)),
+            KeySessionPair(listener_keypair, Handshake(listener)),
         ))
     }
 
@@ -699,7 +696,7 @@ mod test {
 
     #[test]
     fn test_handshake() {
-        let ((dialer_keypair, dialer), (listener_keypair, listener)) =
+        let (KeySessionPair(dialer_keypair, dialer), KeySessionPair(listener_keypair, listener)) =
             build_test_connection().unwrap();
 
         let (dialer_socket, listener_socket) = perform_handshake(dialer, listener).unwrap();
@@ -716,7 +713,7 @@ mod test {
 
     #[test]
     fn simple_test() -> io::Result<()> {
-        let ((_dialer_keypair, dialer), (_listener_keypair, listener)) =
+        let (KeySessionPair(_dialer_keypair, dialer), KeySessionPair(_listener_keypair, listener)) =
             build_test_connection().unwrap();
 
         let (mut dialer_socket, mut listener_socket) = perform_handshake(dialer, listener)?;
@@ -737,7 +734,7 @@ mod test {
 
     #[test]
     fn interleaved_writes() -> io::Result<()> {
-        let ((_dialer_keypair, dialer), (_listener_keypair, listener)) =
+        let (KeySessionPair(_dialer_keypair, dialer), KeySessionPair(_listener_keypair, listener)) =
             build_test_connection().unwrap();
 
         let (mut a, mut b) = perform_handshake(dialer, listener)?;
@@ -766,7 +763,7 @@ mod test {
 
     #[test]
     fn u16_max_writes() -> io::Result<()> {
-        let ((_dialer_keypair, dialer), (_listener_keypair, listener)) =
+        let (KeySessionPair(_dialer_keypair, dialer), KeySessionPair(_listener_keypair, listener)) =
             build_test_connection().unwrap();
 
         let (mut a, mut b) = perform_handshake(dialer, listener)?;

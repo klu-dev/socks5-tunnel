@@ -63,6 +63,7 @@ impl Transport for TcpTransport {
         let socket_addr = multiaddr_to_socketaddr(&addr)?;
         let config = self.clone();
         let listener = ::std::net::TcpListener::bind(&socket_addr)?;
+        listener.set_nonblocking(true)?;
         let local_addr = socketaddr_to_multiaddr(listener.local_addr()?);
         let listener = TcpListener::try_from(listener)?;
 

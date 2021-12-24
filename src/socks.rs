@@ -51,7 +51,6 @@ pub(crate) async fn name_port(addr_buf: &[u8]) -> io::Result<(SocketAddr, Box<St
     debug!("lookup_host {}", hostname);
     let hostname = &format!("{}:{}", hostname, port);
     let mut addrs = lookup_host(hostname).await?;
-    debug!("lookup_host {} success", hostname);
     let first = addrs
         .next()
         .ok_or_else(|| other(&format!("wrong hostname {}", hostname)))?;

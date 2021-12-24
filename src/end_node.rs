@@ -72,6 +72,7 @@ impl EndNode {
         let num_methods = async move {
             let mut buf = [0u8; 1];
             conn.read_exact(&mut buf).await?;
+            
             io::Result::Ok((buf, conn))
         }
         .boxed();
@@ -166,15 +167,16 @@ impl EndNode {
                         v5::ATYP_IPV6 => {
                             let mut buf = [0u8; 18];
                             conn.read_exact(&mut buf).await?;
-                            let a = ((buf[0] as u16) << 8) | (buf[1] as u16);
-                            let b = ((buf[2] as u16) << 8) | (buf[3] as u16);
-                            let c = ((buf[4] as u16) << 8) | (buf[5] as u16);
-                            let d = ((buf[6] as u16) << 8) | (buf[7] as u16);
-                            let e = ((buf[8] as u16) << 8) | (buf[9] as u16);
-                            let f = ((buf[10] as u16) << 8) | (buf[11] as u16);
-                            let g = ((buf[12] as u16) << 8) | (buf[13] as u16);
-                            let h = ((buf[14] as u16) << 8) | (buf[15] as u16);
-                            let addr = Ipv6Addr::new(a, b, c, d, e, f, g, h);
+                            let v6_a = ((buf[0] as u16) << 8) | (buf[1] as u16);
+                            let v6_b = ((buf[2] as u16) << 8) | (buf[3] as u16);
+                            let v6_c = ((buf[4] as u16) << 8) | (buf[5] as u16);
+                            let v6_d = ((buf[6] as u16) << 8) | (buf[7] as u16);
+                            let v6_e = ((buf[8] as u16) << 8) | (buf[9] as u16);
+                            let v6_f = ((buf[10] as u16) << 8) | (buf[11] as u16);
+                            let v6_g = ((buf[12] as u16) << 8) | (buf[13] as u16);
+                            let v6_h = ((buf[14] as u16) << 8) | (buf[15] as u16);
+                            let addr =
+                                Ipv6Addr::new(v6_a, v6_b, v6_c, v6_d, v6_e, v6_f, v6_g, v6_h);
                             let port = ((buf[16] as u16) << 8) | (buf[17] as u16);
                             let addr = SocketAddrV6::new(addr, port, 0, 0);
                             Ok((SocketAddr::V6(addr), conn, Box::new(addr.to_string())))
