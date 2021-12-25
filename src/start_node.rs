@@ -49,6 +49,10 @@ impl StartNode {
             return true;
         }
 
+        if self.bypass_list.is_none() {
+            return false;
+        }
+
         if addr.is_private() || addr.is_loopback() || addr.is_broadcast() {
             return true;
         }
