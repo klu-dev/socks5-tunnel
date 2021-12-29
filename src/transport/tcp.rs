@@ -64,7 +64,7 @@ impl Transport for TcpTransport {
         let config = self.clone();
         let listener = ::std::net::TcpListener::bind(&socket_addr)?;
         listener.set_nonblocking(true)?;
-        let local_addr = socketaddr_to_multiaddr(listener.local_addr()?);
+        let local_addr = socketaddr_to_multiaddr(&listener.local_addr()?);
         let listener = TcpListener::try_from(listener)?;
 
         Ok((
@@ -101,7 +101,7 @@ impl Stream for TcpListenerStream {
                     return Poll::Ready(Some(Err(e)));
                 }
                 let dialer_addr = match socket.peer_addr() {
-                    Ok(addr) => socketaddr_to_multiaddr(addr),
+                    Ok(addr) => socketaddr_to_multiaddr(&addr),
                     Err(e) => return Poll::Ready(Some(Err(e))),
                 };
                 Poll::Ready(Some(Ok((
@@ -153,10 +153,10 @@ impl TcpSocket {
 
 impl BoundInfo for TcpSocket {
     fn local_addr(&self) -> Multiaddr {
-        socketaddr_to_multiaddr(self.inner.get_ref().local_addr().unwrap())
+        socketaddr_to_multiaddr(&self.inner.get_ref().local_addr().unwrap())
     }
     fn peer_addr(&self) -> Multiaddr {
-        socketaddr_to_multiaddr(self.inner.get_ref().peer_addr().unwrap())
+        socketaddr_to_multiaddr(&self.inner.get_ref().peer_addr().unwrap())
     }
 }
 
@@ -188,7 +188,7 @@ impl AsyncWrite for TcpSocket {
     }
 }
 
-pub fn socketaddr_to_multiaddr(socketaddr: SocketAddr) -> Multiaddr {
+pub fn socketaddr_to_multiaddr(socketaddr: &SocketAddr) -> Multiaddr {
     let ipaddr: Multiaddr = socketaddr.ip().into();
     ipaddr.with(Protocol::Tcp(socketaddr.port()))
 }

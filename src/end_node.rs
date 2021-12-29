@@ -1,7 +1,7 @@
 use crate::build_transport::{build_tcp_noise_transport, Connection, TSocket, TCP_TRANSPORT};
 use crate::other;
 use crate::server::{server_stream_handler, transfer};
-use crate::socks::{name_port, v4, v5};
+use crate::socks::{socks_name_port, v4, v5};
 use crate::transport::{
     tcp::{multiaddr_to_socketaddr, socketaddr_to_multiaddr},
     BoundInfo, Transport,
@@ -72,7 +72,7 @@ impl EndNode {
         let num_methods = async move {
             let mut buf = [0u8; 1];
             conn.read_exact(&mut buf).await?;
-            
+
             io::Result::Ok((buf, conn))
         }
         .boxed();
@@ -211,7 +211,7 @@ impl EndNode {
                             conn.read_exact(&mut buf).await?;
                             let mut buf = vec![0u8; (buf[0] as usize) + 2];
                             conn.read_exact(&mut buf).await?;
-                            let (socket_addr, addr) = name_port(&buf).await?;
+                            let (socket_addr, addr) = socks_name_port(&buf).await?;
                             Ok((socket_addr, conn, addr))
                         }
 
@@ -243,7 +243,7 @@ impl EndNode {
                 Ok((
                     conn,
                     TCP_TRANSPORT
-                        .dial(socketaddr_to_multiaddr(socket_addr))?
+                        .dial(socketaddr_to_multiaddr(&socket_addr))?
                         .await,
                     dest_addr,
                 ))

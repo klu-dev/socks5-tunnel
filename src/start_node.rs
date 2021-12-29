@@ -4,8 +4,9 @@ use crate::build_transport::{
 use crate::command::NetAddrIpv4List;
 use crate::other;
 use crate::server::{server_stream_handler, transfer};
-use crate::socks::{name_port, v4, v5};
+use crate::socks::{http_hostname_to_ip, socks_name_port, v4, v5};
 use crate::transport::tcp::socketaddr_to_multiaddr;
+use crate::transport::BoundInfo;
 use crate::transport::{tcp::multiaddr_to_socketaddr, Transport};
 use ::log::{info, warn};
 use crypto::x25519::{PrivateKey, PublicKey};
@@ -13,14 +14,35 @@ use futures::{future, AsyncReadExt, AsyncWriteExt, FutureExt, TryFutureExt};
 use log::{debug, trace};
 use parity_multiaddr::Multiaddr;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io;
 use tokio::time::sleep;
 
+#[derive(Debug, Clone, Copy)]
+pub enum ProtoType {
+    Socks,
+    Http,
+}
+
+impl FromStr for ProtoType {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "socks" => Ok(ProtoType::Socks),
+            "http" => Ok(ProtoType::Http),
+            _ => Err("Unknow mode. Option should be socks or http"),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct StartNode {
+    proto: ProtoType,
+    listen_addr: Multiaddr,
     peer_addr: Multiaddr,
     local_private_key: PrivateKey,
     peer_public_key: PublicKey,
@@ -30,12 +52,16 @@ struct StartNode {
 
 impl StartNode {
     fn new(
+        proto: ProtoType,
+        listen_addr: Multiaddr,
         peer_addr: Multiaddr,
         local_private_key: PrivateKey,
         peer_public_key: PublicKey,
         bypass_list: Option<NetAddrIpv4List>,
     ) -> StartNode {
         StartNode {
+            proto,
+            listen_addr,
             peer_addr,
             local_private_key,
             peer_public_key,
@@ -79,29 +105,16 @@ impl StartNode {
         }
         false
     }
-    // async fn serve(
-    //     &self,
-    //     conn: impl TSocket,
-    // ) -> Result<(u64, u64, Box<String>), Box<dyn std::error::Error>> {
-    //     let noise_transport =
-    //         build_tcp_noise_transport(self.local_private_key.clone(), self.peer_public_key);
 
-    //     let mut c2 = noise_transport.dial(self.peer_addr.clone())?.await?;
+    async fn serve(&self, conn: impl TSocket) -> io::Result<(u64, u64, Box<String>)> {
+        match self.proto {
+            ProtoType::Socks => self.serve_socks(conn).await,
+            ProtoType::Http => self.serve_http(conn).await,
+        }
+    }
 
-    //     let c1_addr = (conn.local_addr(), conn.peer_addr());
-    //     let c2_addr = (c2.metadata.c_addr().clone(), c2.metadata.s_addr().clone());
-    //     let dest_addr = Box::new(multiaddr_to_socketaddr(&c2_addr.1).unwrap().to_string());
-    //     let (c1_read, c1_write) = conn.split();
-    //     let (c2_read, c2_write) = c2.socket.take().unwrap().split();
-
-    //     let half1 = transfer(c1_read, c1_addr.clone(), c2_write, c2_addr.clone());
-    //     let half2 = transfer(c2_read, c2_addr, c1_write, c1_addr);
-    //     let (res1, res2) = future::try_join(half1, half2).await?;
-    //     Ok((res1, res2, dest_addr))
-    // }
-
-    async fn serve(&self, mut conn: impl TSocket) -> io::Result<(u64, u64, Box<String>)> {
-        let mut buf = [0u8; 1];
+    async fn serve_socks(&self, mut conn: impl TSocket) -> io::Result<(u64, u64, Box<String>)> {
+        let mut buf = [0_u8; 1];
 
         conn.read_exact(&mut buf).await?;
         let res = match buf[0] {
@@ -287,7 +300,7 @@ impl StartNode {
                             conn.read_exact(&mut buf).await?;
                             let mut buf = vec![0u8; (buf[0] as usize) + 2];
                             conn.read_exact(&mut buf).await?;
-                            let (socket_addr, addr) = name_port(&buf).await?;
+                            let (socket_addr, addr) = socks_name_port(&buf).await?;
                             Ok((socket_addr, conn, addr, v5::ATYP_DOMAIN))
                         }
 
@@ -334,7 +347,7 @@ impl StartNode {
                         conn,
                         Some(
                             TCP_TRANSPORT
-                                .dial(socketaddr_to_multiaddr(socket_addr))?
+                                .dial(socketaddr_to_multiaddr(&socket_addr))?
                                 .await,
                         ),
                         None,
@@ -410,12 +423,16 @@ impl StartNode {
         // +----+-----+-------+------+----------+----------+
         let connect_request = auth_response
             .and_then(|mut c2| async move {
-                trace!("build_tun: addr_port: {}", &*addres);
+                trace!("build_tun: addr_port: {}", &addres);
                 let addr_port = addres.split(':').collect::<Vec<_>>();
 
-                let port = addr_port[1]
-                    .parse::<u16>()
-                    .map_err(|_| other("parse port fail"))?;
+                let port = if addr_port.len() >= 2 {
+                    addr_port[1]
+                        .parse::<u16>()
+                        .map_err(|_| other("parse port fail"))?
+                } else {
+                    80
+                };
                 let mut buf = [0u8; 4];
                 // version v5
                 buf[0] = v5::VERSION;
@@ -766,14 +783,21 @@ impl StartNode {
 
     async fn update_peer_conn_state(&self) -> bool {
         let delay = sleep(std::time::Duration::from_secs(5));
-        let conn = TCP_TRANSPORT
+
+        let noise_transport =
+            build_tcp_noise_transport(self.local_private_key.clone(), self.peer_public_key);
+
+        let conn = noise_transport
             .dial(self.peer_addr.clone())
             .unwrap_or_else(|_| panic!("Transport dail {} fail", self.peer_addr));
+        // let conn = TCP_TRANSPORT
+        //     .dial(self.peer_addr.clone())
+        //     .unwrap_or_else(|_| panic!("Transport dail {} fail", self.peer_addr));
         let peer_ready = future::select(conn, delay.boxed())
             .then(|either| async move {
                 match either {
                     future::Either::Left((Ok(pair), _)) => Ok(pair),
-                    future::Either::Left((Err(e), _)) => Err(e),
+                    future::Either::Left((Err(e), _)) => Err(other(&e.to_string())),
                     future::Either::Right(((), _)) => {
                         io::Result::Err(other("timeout during handshake"))
                     }
@@ -784,6 +808,218 @@ impl StartNode {
 
         self.peer_ready.store(peer_ready, Ordering::Relaxed);
         peer_ready
+    }
+
+    async fn serve_http(&self, mut conn: impl TSocket) -> io::Result<(u64, u64, Box<String>)> {
+        let mut buf = [0_u8; 4 * 1024];
+        const HEADER_LINE_END: &[u8] = b"\r\n";
+
+        // Read the whole request ending with empty line \r\n\r\n
+        let read_header = Self::read_http_header(&mut conn, &mut buf).boxed();
+        let (mut header_size, read_len) =
+            match future::select(read_header, sleep(Duration::from_secs(10)).boxed()).await {
+                future::Either::Left((res, _)) => res,
+                future::Either::Right(((), _)) => {
+                    io::Result::Err(other("timeout during read request"))
+                }
+            }?;
+
+        // Count header line.
+        let header_count = buf[..header_size]
+            .windows(HEADER_LINE_END.len())
+            .filter(|window| *window == HEADER_LINE_END)
+            .count()
+            - 1;
+        trace!(
+            "Parse {} header lines {}",
+            header_count,
+            std::str::from_utf8(&buf)
+                .map_err(|e| other(&format!("convert to utf8 fail {}", &e.to_string())))?
+        );
+
+        // Check requet headers
+        let mut headers = vec![httparse::EMPTY_HEADER; header_count];
+        let mut req = httparse::Request::new(&mut headers);
+        let res = req.parse(&buf).map_err(|e| other(&e.to_string()))?;
+        if !res.is_complete() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Pares request fail raw input {}",
+                    std::str::from_utf8(&buf)
+                        .map_err(|e| other(&format!("convert to utf8 fail {}", &e.to_string())))?,
+                ),
+            ));
+        }
+
+        if req.method.is_none() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Cannot parse method. raw input {}",
+                    std::str::from_utf8(&buf)
+                        .map_err(|e| other(&format!("convert to utf8 fail {}", &e.to_string())))?,
+                ),
+            ));
+        }
+
+        if req.version.is_none() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Cannot parse version. raw input {}",
+                    std::str::from_utf8(&buf)
+                        .map_err(|e| other(&format!("convert to utf8 fail {}", &e.to_string())))?,
+                ),
+            ));
+        }
+
+        // Get Host header from request
+        let dest_addr = match (req.headers).iter().find(|h| h.name == "Host") {
+            Some(a) => std::str::from_utf8(a.value)
+                .map_err(|e| other(&format!("Convert to utf8 fail {}", &e.to_string())))?,
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "Cannot find Host header in request. raw input {}",
+                        std::str::from_utf8(&buf).map_err(|e| other(&format!(
+                            "Convert to utf8 fail {}",
+                            &e.to_string()
+                        )))?,
+                    ),
+                ))
+            }
+        };
+
+        if req.method.unwrap() != "CONNECT" {
+            header_size = 0;
+        };
+
+        // Find the ip of hostname
+        let (remote_socket_addr, atyp) = http_hostname_to_ip(dest_addr).await?;
+
+        // TODO: support auto-proxy-configuraiton return PAC file
+        if socketaddr_to_multiaddr(&remote_socket_addr) == self.listen_addr {
+            trace!("Http access proxy self");
+            let response = format!("HTTP/1.{} 404 Not Found\r\n\r\n", req.version.unwrap());
+            conn.write_all(response.as_bytes()).await?;
+            conn.flush().await?;
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Cannot self reponse as server. raw input {}",
+                    std::str::from_utf8(&buf)
+                        .map_err(|e| other(&format!("Convert to utf8 fail {}", &e.to_string())))?,
+                ),
+            ));
+        }
+
+        debug!("proxying to {}", remote_socket_addr);
+        let mut pass = false;
+        if atyp != v5::ATYP_IPV6 {
+            if let SocketAddr::V4(addr_v4) = remote_socket_addr {
+                pass = self.is_bypass_addr(addr_v4.ip());
+                trace!("address: {} bypass: {}", addr_v4, pass)
+            }
+        }
+
+        let (bypass_c2, tun_c2) = if !pass {
+            (
+                None,
+                Some(self.build_tunnel(dest_addr.to_string(), atyp).await?),
+            )
+        } else {
+            (
+                Some(
+                    TCP_TRANSPORT
+                        .dial(socketaddr_to_multiaddr(&remote_socket_addr))?
+                        .await?,
+                ),
+                None,
+            )
+        };
+
+        // Send response to client for CONNECT request.
+        if req.method.unwrap() == "CONNECT" {
+            let response = format!(
+                "HTTP/1.{} 200 Connection established\r\n\r\n",
+                req.version.unwrap()
+            );
+            conn.write_all(response.as_bytes()).await?;
+            conn.flush().await?;
+        }
+
+        let left = &buf[header_size..read_len];
+        trace!("Left data size after request {}", left.len());
+
+        let c1 = conn;
+        if bypass_c2.is_some() {
+            let mut c2 = bypass_c2.unwrap();
+            // Deliver left data to remote server
+            if !left.is_empty() {
+                c2.write_all(left).await?;
+                c2.flush().await?;
+            }
+            let c1_addr = (c1.local_addr(), c1.peer_addr());
+            let c2_addr = (c2.local_addr(), c2.peer_addr());
+            let (c1_read, c1_write) = c1.split();
+            let (c2_read, c2_write) = c2.split();
+            let half1 = transfer(c1_read, c1_addr.clone(), c2_write, c2_addr.clone());
+            let half2 = transfer(c2_read, c2_addr, c1_write, c1_addr);
+            let (res1, res2) = future::try_join(half1, half2).await?;
+            io::Result::Ok((res1, res2, Box::new(dest_addr.to_string())))
+        } else {
+            let (mut c2, _remote_c2_local_addr) = tun_c2.unwrap();
+            // Deliver left data to remote server
+            if !left.is_empty() {
+                c2.socket.as_mut().unwrap().write_all(left).await?;
+                c2.socket.as_mut().unwrap().flush().await?;
+            }
+            let c1_addr = (c1.local_addr(), c1.peer_addr());
+            let c2_addr = (c2.metadata.c_addr().clone(), c2.metadata.s_addr().clone());
+            let dest_addr = Box::new(multiaddr_to_socketaddr(&c2_addr.1).unwrap().to_string());
+            let (c1_read, c1_write) = c1.split();
+            let (c2_read, c2_write) = c2.socket.take().unwrap().split();
+
+            let half1 = transfer(c1_read, c1_addr.clone(), c2_write, c2_addr.clone());
+            let half2 = transfer(c2_read, c2_addr, c1_write, c1_addr);
+            let (res1, res2) = future::try_join(half1, half2).await?;
+            io::Result::Ok((res1, res2, dest_addr))
+        }
+    }
+
+    async fn read_http_header(
+        conn: &mut impl TSocket,
+        buf: &mut [u8],
+    ) -> io::Result<(usize, usize)> {
+        const HEADER_ENDING: &[u8] = b"\r\n\r\n";
+
+        let mut idx = 0_usize;
+        loop {
+            let read_size = conn.read(&mut buf[idx..]).await?;
+            idx += read_size;
+            let found = buf[..idx]
+                .windows(HEADER_ENDING.len())
+                .rposition(|window| window == HEADER_ENDING)
+                .map(|pos| pos + HEADER_ENDING.len());
+
+            if found.is_some() {
+                return Ok((found.unwrap(), idx));
+            }
+            if idx >= buf.len() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "Cannot parse header {} too large",
+                        std::str::from_utf8(buf).map_err(|e| other(&format!(
+                            "Convert to utf8 fail {}",
+                            &e.to_string()
+                        )))?,
+                    ),
+                ));
+            }
+        }
     }
 }
 
@@ -819,6 +1055,7 @@ where
 }
 
 pub async fn start_client_mode(
+    proto: ProtoType,
     listen_addr: Multiaddr,
     peer_addr: Multiaddr,
     local_private_key: PrivateKey,
@@ -826,6 +1063,8 @@ pub async fn start_client_mode(
     bypass_list: Option<NetAddrIpv4List>,
 ) -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
     let start_node = Arc::new(StartNode::new(
+        proto,
+        listen_addr.clone(),
         peer_addr,
         local_private_key,
         peer_public_key,

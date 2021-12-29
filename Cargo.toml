@@ -1,8 +1,16 @@
 [package]
 name = "socks5-tunnel"
-version = "0.1.0"
-authors = ["kail"]
+version = "0.2.0"
 edition = "2021"
+authors = ["kai.lu@citrix.com"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/klu-dev/socks5-tunnel"
+description = """
+socks v5 and http proxy tunnel application based on noise encryption.
+"""
+categories = ["asynchronous", "network-programming"]
+keywords = ["porxy", "socks", "http"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -23,6 +31,7 @@ env_logger = "0.9"
 structopt = "0.3"
 pin-project = "1"
 snow = { version = "0.8", features = ["ring-accelerated"] }
+httparse = "1.5"
 
 [dev-dependencies]
 memsocket = { path = "memsocket", version = "0.1" }

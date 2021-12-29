@@ -1,3 +1,4 @@
+use crate::start_node::ProtoType;
 use crate::transport::tcp::socketaddr_to_multiaddr;
 use crypto::x25519::{PrivateKey, PublicKey};
 use parity_multiaddr::Multiaddr;
@@ -11,10 +12,7 @@ use structopt::StructOpt;
 
 pub(crate) type NetAddrIpv4List = HashMap<u32, u16>;
 
-#[derive(Debug, StructOpt)]
-#[structopt(
-    name = "socks5-tunnel",
-    about = "Proxy for socks5 through encrpted tunnel\n\
+pub(crate)const COMMAND_HELP: &str = "Proxy for socks5 through encrpted tunnel\n\
 *                   ______________________________________________\n\
 *                   | __________________________________________  |\n\
 *                   | |           Noise Encrypt Tunnel          | |\n\
@@ -22,12 +20,20 @@ Browser ---> Client Mode Proxy                            Server Mode Proxy ----
 Support three kind of command:\n\
 1. Generate secret key:\n\
 .\\socks5-tunnel.exe -g\n\
-2. Work in clinet mode:\n\
-.\\socks5-tunnel.exe -m client -l 127.0.0.1:1080 -p 127.0.0.1:2080 -k \
+2. Work in client mode:\n\
+.\\socks5-tunnel.exe -m client -l 127.0.0.1:1080 -p 10.10.53.26:1080 -k \
 <local private key> -b <peer public key>\n\
+or set bypass ip and proxy protocol:\n\
+.\\socks5-tunnel.exe -m client -t http -l 127.0.0.1:1080 -p 10.10.53.26:1080 -k \
+<local private key> -b <peer public key> -y china_ip.txt\n\
 3. Work in server mode:\n\
-.\\socks5-tunnel.exe -m server -l 127.0.0.1:2080 -k \
-<local private key> -b <peer public key>\n"
+.\\socks5-tunnel.exe -m server -l 0.0.0.0:1080 -k \
+<local private key> -b <peer public key>\n";
+
+#[derive(Debug, StructOpt)]
+#[structopt(
+    name = "socks5-tunnel",
+    about = COMMAND_HELP
 )]
 pub struct Args {
     #[structopt(short = "g", long, help = "generate curve25519 keypair")]
@@ -79,9 +85,17 @@ pub struct Args {
     #[structopt(
         short = "y",
         long = "bypass",
-        help = "ip list file to bypass, packet send directly not through remote proxy server"
+        help = "ip list file to bypass, packet send directly not through remote proxy server. Optional for client mode"
     )]
     bypass_file: Option<PathBuf>,
+
+    #[structopt(
+        short = "t",
+        long = "proto",
+        default_value = "socks",
+        help = "Set proxy protocol: socks or http. Optional for client mode"
+    )]
+    proto: ProtoType,
 }
 
 pub fn parse_command_line() -> Command {
@@ -95,8 +109,9 @@ pub fn parse_command_line() -> Command {
         match mode {
             CommandMode::Client => {
                 return Command::ClientMode(
-                    socketaddr_to_multiaddr(args.local_addr),
-                    socketaddr_to_multiaddr(args.peer_addr.unwrap()),
+                    args.proto,
+                    socketaddr_to_multiaddr(&args.local_addr),
+                    socketaddr_to_multiaddr(&args.peer_addr.unwrap()),
                     args.local_pirvate_key.unwrap(),
                     args.peer_public_key.unwrap(),
                     if args.bypass_file.is_none() {
@@ -108,7 +123,7 @@ pub fn parse_command_line() -> Command {
             }
             CommandMode::Server => {
                 return Command::ServerMode(
-                    socketaddr_to_multiaddr(args.local_addr),
+                    socketaddr_to_multiaddr(&args.local_addr),
                     args.local_pirvate_key.unwrap(),
                     args.peer_public_key.unwrap(),
                 )
@@ -194,6 +209,7 @@ pub enum Command {
     None,
     GenerateKeypair,
     ClientMode(
+        ProtoType,
         Multiaddr,
         Multiaddr,
         PrivateKey,
@@ -203,7 +219,7 @@ pub enum Command {
     ServerMode(Multiaddr, PrivateKey, PublicKey),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum CommandMode {
     Client,
     Server,

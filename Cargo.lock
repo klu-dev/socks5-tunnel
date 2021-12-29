@@ -446,6 +446,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "httparse"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acd94fdbe1d4ff688b67b04eee2e17bd50995534a61539e45adfefb45e5e5503"
+
+[[package]]
 name = "humantime"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1009,13 +1015,14 @@ dependencies = [
 
 [[package]]
 name = "socks5-tunnel"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "crypto",
  "env_logger",
  "futures",
  "hex",
+ "httparse",
  "log",
  "memsocket",
  "parity-multiaddr",

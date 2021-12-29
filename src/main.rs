@@ -57,7 +57,9 @@ async fn main() -> io::Result<()> {
             generate_keypair();
         }
         Command::None => {
-            println!("Parse command fail.");
+            println!("Parse command parameters fail.");
+            println!("{}", command::COMMAND_HELP);
+
             return Err(other("Parse command fail."));
         }
         Command::ServerMode(listen_addr, local_priavte_key, peer_public_key) => {
@@ -70,6 +72,7 @@ async fn main() -> io::Result<()> {
             }
         }
         Command::ClientMode(
+            proto,
             listen_addr,
             peer_addr,
             local_priavte_key,
@@ -79,6 +82,7 @@ async fn main() -> io::Result<()> {
             println!("Work in client mode...");
             println!("Listening on: {}", listen_addr);
             if let Err(e) = start_client_mode(
+                proto,
                 listen_addr.clone(),
                 peer_addr,
                 local_priavte_key,
