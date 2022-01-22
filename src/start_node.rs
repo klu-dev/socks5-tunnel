@@ -11,7 +11,7 @@ use crate::transport::{tcp::multiaddr_to_socketaddr, Transport};
 use ::log::{info, warn};
 use crypto::x25519::{PrivateKey, PublicKey};
 use futures::{future, AsyncReadExt, AsyncWriteExt, FutureExt, TryFutureExt};
-use log::{debug, trace};
+use log::{debug, error, trace};
 use parity_multiaddr::Multiaddr;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::str::FromStr;
@@ -998,6 +998,10 @@ impl StartNode {
         let mut idx = 0_usize;
         loop {
             let read_size = conn.read(&mut buf[idx..]).await?;
+            if read_size == 0 {
+                error!("Read 0 bytes");
+                return Err(io::Error::new(io::ErrorKind::Other, "Read 0 bytes"));
+            }
             idx += read_size;
             let found = buf[..idx]
                 .windows(HEADER_ENDING.len())
